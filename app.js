@@ -6,6 +6,8 @@ const themeToggle = document.getElementById('themeToggle');
 const clearButton = document.getElementById('clearButton');
 let lightboxElement;
 let currentFetchController = null;
+let currentLightboxController = null;
+let activeLightboxRequestId = 0;
 
 function createLightbox() {
   const lightbox = document.createElement('div');
@@ -55,6 +57,13 @@ function openLightbox(url) {
 }
 
 function closeLightbox() {
+  if (currentLightboxController) {
+    currentLightboxController.abort();
+    currentLightboxController = null;
+  }
+
+  activeLightboxRequestId += 1;
+
   if (!lightboxElement) return;
   lightboxElement.classList.remove('is-visible');
   document.body.style.overflow = '';
@@ -84,11 +93,12 @@ async function fetchCatImage(signal) {
 /**
  * Fetch a full-resolution cat image by id.
  * @param {string} id - Cat image id.
+ * @param {AbortSignal} signal - Optional abort signal to cancel the request.
  * @returns {Promise<string>} URL of the high-res cat image.
  */
-async function fetchFullCatImage(id) {
+async function fetchFullCatImage(id, signal) {
   const endpoint = `https://api.thecatapi.com/v1/images/${id}`;
-  const response = await fetch(endpoint);
+  const response = await fetch(endpoint, { signal });
 
   if (!response.ok) {
     throw new Error(`Cat API returned ${response.status} for full image`);
@@ -227,19 +237,37 @@ function init() {
 
     const catId = trigger.dataset.catId;
     const thumb = trigger.dataset.thumbImage;
+    const requestId = activeLightboxRequestId + 1;
+    activeLightboxRequestId = requestId;
+
+    if (currentLightboxController) {
+      currentLightboxController.abort();
+    }
+
+    currentLightboxController = new AbortController();
 
     try {
       trigger.disabled = true;
       // Show placeholder immediately while the high-res fetch happens.
       if (thumb) openLightbox(thumb);
-      const fullUrl = await fetchFullCatImage(catId);
-      trigger.dataset.fullImage = fullUrl;
-      openLightbox(fullUrl);
+      const fullUrl = await fetchFullCatImage(catId, currentLightboxController.signal);
+      const isCurrentRequest = activeLightboxRequestId === requestId;
+      const isLightboxOpen = lightboxElement?.classList.contains('is-visible');
+
+      if (isCurrentRequest && isLightboxOpen) {
+        trigger.dataset.fullImage = fullUrl;
+        openLightbox(fullUrl);
+      }
     } catch (error) {
-      console.error('Failed to load full-size cat image', error);
-      showStatus('Could not load the full-size cat right now.', true);
+      if (error.name !== 'AbortError') {
+        console.error('Failed to load full-size cat image', error);
+        showStatus('Could not load the full-size cat right now.', true);
+      }
     } finally {
       trigger.disabled = false;
+      if (activeLightboxRequestId === requestId) {
+        currentLightboxController = null;
+      }
     }
   });
   document.addEventListener('click', (event) => {
