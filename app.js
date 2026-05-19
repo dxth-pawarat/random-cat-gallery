@@ -8,6 +8,7 @@ let lightboxElement;
 let currentFetchController = null;
 let currentLightboxController = null;
 let activeLightboxRequestId = 0;
+let lastFocusedElement = null;
 
 function createLightbox() {
   const lightbox = document.createElement('div');
@@ -48,12 +49,19 @@ function getLightbox() {
   return lightboxElement;
 }
 
-function openLightbox(url) {
+function openLightbox(url, returnFocusElement = document.activeElement) {
   const lightbox = getLightbox();
   const image = lightbox.querySelector('.lightbox__image');
+  const closeButton = lightbox.querySelector('.lightbox__close');
+
+  if (returnFocusElement instanceof HTMLElement) {
+    lastFocusedElement = returnFocusElement;
+  }
+
   image.src = url;
   lightbox.classList.add('is-visible');
   document.body.style.overflow = 'hidden';
+  closeButton.focus({ preventScroll: true });
 }
 
 function closeLightbox() {
@@ -64,9 +72,42 @@ function closeLightbox() {
 
   activeLightboxRequestId += 1;
 
-  if (!lightboxElement) return;
-  lightboxElement.classList.remove('is-visible');
+  if (lightboxElement) {
+    lightboxElement.classList.remove('is-visible');
+  }
+
   document.body.style.overflow = '';
+
+  if (lastFocusedElement?.isConnected) {
+    lastFocusedElement.focus({ preventScroll: true });
+  }
+
+  lastFocusedElement = null;
+}
+
+function trapLightboxFocus(event) {
+  if (!lightboxElement?.classList.contains('is-visible')) return;
+  if (event.key !== 'Tab') return;
+
+  const focusableElements = Array.from(
+    lightboxElement.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])')
+  ).filter((element) => !element.disabled && element.offsetParent !== null);
+
+  if (focusableElements.length === 0) {
+    event.preventDefault();
+    return;
+  }
+
+  const firstElement = focusableElements[0];
+  const lastElement = focusableElements[focusableElements.length - 1];
+
+  if (event.shiftKey && document.activeElement === firstElement) {
+    event.preventDefault();
+    lastElement.focus();
+  } else if (!event.shiftKey && document.activeElement === lastElement) {
+    event.preventDefault();
+    firstElement.focus();
+  }
 }
 
 /**
@@ -231,7 +272,7 @@ function init() {
     if (!trigger) return;
     const cachedFull = trigger.dataset.fullImage;
     if (cachedFull) {
-      openLightbox(cachedFull);
+      openLightbox(cachedFull, trigger);
       return;
     }
 
@@ -249,14 +290,14 @@ function init() {
     try {
       trigger.disabled = true;
       // Show placeholder immediately while the high-res fetch happens.
-      if (thumb) openLightbox(thumb);
+      if (thumb) openLightbox(thumb, trigger);
       const fullUrl = await fetchFullCatImage(catId, currentLightboxController.signal);
       const isCurrentRequest = activeLightboxRequestId === requestId;
       const isLightboxOpen = lightboxElement?.classList.contains('is-visible');
 
       if (isCurrentRequest && isLightboxOpen) {
         trigger.dataset.fullImage = fullUrl;
-        openLightbox(fullUrl);
+        openLightbox(fullUrl, trigger);
       }
     } catch (error) {
       if (error.name !== 'AbortError') {
@@ -279,6 +320,8 @@ function init() {
     }
   });
   document.addEventListener('keydown', (event) => {
+    trapLightboxFocus(event);
+
     if (event.key === 'Escape' && lightboxElement?.classList.contains('is-visible')) {
       closeLightbox();
     }
