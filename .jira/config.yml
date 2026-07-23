@@ -1,4 +1,16 @@
 deployments:
+  deploymentGating:
+    enabled: true # to enable the feature
+    retry: 50 # run poll action 50 times
+    sleep: 30 # wait 30 seconds between each poll
+    environments: # select the environments you'd like to use with this feature
+    - Testing
+    - Staging
+    - Development
+    - Production
+  services:
+    ids:
+    - b:YXJpOmNsb3VkOmdyYXBoOjpzZXJ2aWNlLzgzODk0NzFjLWZmZjYtNDY4ZS04NGQ3LTVlMDljNTU5ZGRlOS9kMWU0ZWZmNC04NmVhLTExZjEtOGYyOC0xMjJlYmQ0ODczY2Y=
   environmentMapping:
     development:
       - "github-pages"
